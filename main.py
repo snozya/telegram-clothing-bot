@@ -1,3 +1,4 @@
+import os
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     ApplicationBuilder,
@@ -9,13 +10,14 @@ from telegram.ext import (
     ConversationHandler,
 )
 
-BOT_TOKEN = ""  # В переменных окружения
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_CHAT_ID = int(os.getenv("ADMIN_CHAT_ID", "0"))
+if ADMIN_CHAT_ID == 0:
+    raise ValueError("ADMIN_CHAT_ID не задан в переменных окружения")
 
 ASKING_NAME, ASKING_EMAIL, ASKING_PHONE, ASKING_ADDRESS, ASKING_SIZE, CONFIRM = range(6)
 sizes = ["M", "L", "XL", "XXL"]
 orders = {}
-
-ADMIN_CHAT_ID = 123456789  # <-- Вставь сюда свой Telegram ID администратора
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -26,7 +28,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Здравствуйте! Чем могу помочь?", reply_markup=reply_markup
     )
-    return ConversationHandler.END  # Ждём выбора пользователя
+    return ConversationHandler.END
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
@@ -36,7 +38,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return ASKING_NAME
     elif text == "Задать вопрос":
         await update.message.reply_text("Напишите ваш вопрос, мы ответим в ближайшее время.")
-        return ASKING_EMAIL  # Чтобы ловить ответ с вопросом
+        return ASKING_EMAIL
     elif text == "Наши соцсети / Информация":
         keyboard = [
             [
@@ -57,18 +59,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Пожалуйста, выберите опцию с помощью кнопок.")
         return ConversationHandler.END
 
+async def ask_name(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data["fio"] = update.message.text
+    context.user_data["order_in_progress"] = True
+    await update.message.reply_text("Введите электронную почту:")
+    return ASKING_EMAIL
+
 async def ask_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     text = update.message.text
 
-    # Если пользователь идёт по заказу
     if context.user_data.get("order_in_progress"):
         orders[user_id] = {"fio": context.user_data["fio"]}
         orders[user_id]["email"] = text
         await update.message.reply_text("Введите контактный номер телефона:")
         return ASKING_PHONE
     else:
-        # Это вопрос от пользователя
         await context.bot.send_message(
             ADMIN_CHAT_ID,
             f"❓ Вопрос от @{update.message.from_user.username or user_id}:\n{text}",
@@ -117,7 +123,6 @@ async def size_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await query.edit_message_text(text=text, reply_markup=reply_markup)
 
-    # Отправляем админу уведомление о заказе
     await context.bot.send_message(
         ADMIN_CHAT_ID,
         f"🛒 Новый заказ от @{query.from_user.username or user_id}:\n{text}",
@@ -136,22 +141,12 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 def main():
-    import os
-
-    token = os.getenv("BOT_TOKEN")
-    app = ApplicationBuilder().token(token).build()
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     conv_handler = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
+        entry_points=[CommandHandler("start", start), MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)],
         states={
-            ASKING_NAME: [
-                MessageHandler(filters.TEXT & ~filters.COMMAND, ask_name := async def (update, context):
-                    context.user_data["fio"] = update.message.text
-                    context.user_data["order_in_progress"] = True
-                    await update.message.reply_text("Введите электронную почту:")
-                    return ASKING_EMAIL
-                ),
-            ],
+            ASKING_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_name)],
             ASKING_EMAIL: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_email)],
             ASKING_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_phone)],
             ASKING_ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_address)],
@@ -162,11 +157,8 @@ def main():
         allow_reentry=True,
     )
 
-    # Обработчик для кнопок и сообщений вне диалога
     app.add_handler(conv_handler)
-
     app.run_polling()
-
 
 if __name__ == "__main__":
     main()

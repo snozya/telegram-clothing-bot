@@ -1,5 +1,4 @@
 import os
-import asyncio
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -17,19 +16,12 @@ from telegram.ext import (
     filters,
 )
 
-# Состояния диалога
 ASKING_NAME, ASKING_EMAIL, ASKING_PHONE, ASKING_ADDRESS, ASKING_SIZE, CONFIRM, ASKING_QUESTION = range(7)
 
-# Размеры
 sizes = ["M", "L", "XL", "XXL"]
-
-# Заказы
 orders = {}
-
-# Админ ID из переменных окружения
 ADMIN_ID = os.getenv("ADMIN_ID")
 
-# /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [KeyboardButton("Оформить заказ"), KeyboardButton("Задать вопрос")]
@@ -40,7 +32,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
 
-# Обработка выбора
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
@@ -54,7 +45,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Пожалуйста, выберите один из доступных вариантов.")
         return ConversationHandler.END
 
-# Шаги заказа
 async def ask_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     orders[update.message.from_user.id] = {"fio": update.message.text}
     await update.message.reply_text("Укажите, пожалуйста, вашу электронную почту:")
@@ -103,7 +93,6 @@ async def size_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(text=summary, reply_markup=reply_markup)
 
-    # Уведомление администратора о заказе
     if ADMIN_ID:
         try:
             await context.bot.send_message(
@@ -111,18 +100,16 @@ async def size_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 text=f"📦 Новый заказ от @{query.from_user.username or 'неизвестного пользователя'}:\n\n{summary}"
             )
         except Exception as e:
-            print(f"❌ Ошибка отправки админу: {e}")
+            print(f"Ошибка отправки админу: {e}")
 
     return CONFIRM
 
-# Вопрос через кнопку
 async def ask_question_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     await query.edit_message_text("Пожалуйста, напишите ваш вопрос. Мы передадим его администратору.")
     return ASKING_QUESTION
 
-# Ответ на вопрос
 async def handle_user_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
     question = update.message.text
     username = update.message.from_user.username or "неизвестный пользователь"
@@ -137,25 +124,13 @@ async def handle_user_question(update: Update, context: ContextTypes.DEFAULT_TYP
                 text=f"❓ Вопрос от @{username} (ID: {user_id}):\n\n{question}"
             )
         except Exception as e:
-            print(f"❌ Ошибка отправки админу: {e}")
+            print(f"Ошибка отправки админу: {e}")
 
     return ConversationHandler.END
 
-# Отмена
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Операция отменена.")
     return ConversationHandler.END
-
-# Тестовая отправка сообщения админу при запуске
-async def test_admin_message(app):
-    if ADMIN_ID:
-        try:
-            await app.bot.send_message(chat_id=int(ADMIN_ID), text="✅ Тест: бот запущен и может отправлять сообщения.")
-            print("✅ Тестовое сообщение админу отправлено")
-        except Exception as e:
-            print(f"❌ Ошибка отправки тестового сообщения админу: {e}")
-    else:
-        print("⚠️ ADMIN_ID не задан")
 
 def main():
     token = os.getenv("BOT_TOKEN")
@@ -181,12 +156,7 @@ def main():
     )
 
     app.add_handler(conv_handler)
-
-    # Запуск теста отправки сообщения админу перед polling
-    asyncio.run(test_admin_message(app))
-
     app.run_polling()
-
 
 if __name__ == "__main__":
     main()

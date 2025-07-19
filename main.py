@@ -1,3 +1,5 @@
+import os
+import asyncio
 from telegram import (
     Update,
     InlineKeyboardButton,
@@ -15,8 +17,6 @@ from telegram.ext import (
     filters,
 )
 
-import os
-
 # Состояния диалога
 ASKING_NAME, ASKING_EMAIL, ASKING_PHONE, ASKING_ADDRESS, ASKING_SIZE, CONFIRM, ASKING_QUESTION = range(7)
 
@@ -26,7 +26,7 @@ sizes = ["M", "L", "XL", "XXL"]
 # Заказы
 orders = {}
 
-# Админ ID
+# Админ ID из переменных окружения
 ADMIN_ID = os.getenv("ADMIN_ID")
 
 # /start
@@ -105,10 +105,13 @@ async def size_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # Уведомление администратора о заказе
     if ADMIN_ID:
-        await context.bot.send_message(
-            chat_id=int(ADMIN_ID),
-            text=f"📦 Новый заказ от @{query.from_user.username or 'неизвестного пользователя'}:\n\n{summary}"
-        )
+        try:
+            await context.bot.send_message(
+                chat_id=int(ADMIN_ID),
+                text=f"📦 Новый заказ от @{query.from_user.username or 'неизвестного пользователя'}:\n\n{summary}"
+            )
+        except Exception as e:
+            print(f"❌ Ошибка отправки админу: {e}")
 
     return CONFIRM
 
@@ -128,10 +131,13 @@ async def handle_user_question(update: Update, context: ContextTypes.DEFAULT_TYP
     await update.message.reply_text("Спасибо! Ваш вопрос отправлен администратору.")
 
     if ADMIN_ID:
-        await context.bot.send_message(
-            chat_id=int(ADMIN_ID),
-            text=f"❓ Вопрос от @{username} (ID: {user_id}):\n\n{question}"
-        )
+        try:
+            await context.bot.send_message(
+                chat_id=int(ADMIN_ID),
+                text=f"❓ Вопрос от @{username} (ID: {user_id}):\n\n{question}"
+            )
+        except Exception as e:
+            print(f"❌ Ошибка отправки админу: {e}")
 
     return ConversationHandler.END
 
@@ -140,7 +146,17 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Операция отменена.")
     return ConversationHandler.END
 
-# Запуск
+# Тестовая отправка сообщения админу при запуске
+async def test_admin_message(app):
+    if ADMIN_ID:
+        try:
+            await app.bot.send_message(chat_id=int(ADMIN_ID), text="✅ Тест: бот запущен и может отправлять сообщения.")
+            print("✅ Тестовое сообщение админу отправлено")
+        except Exception as e:
+            print(f"❌ Ошибка отправки тестового сообщения админу: {e}")
+    else:
+        print("⚠️ ADMIN_ID не задан")
+
 def main():
     token = os.getenv("BOT_TOKEN")
     app = ApplicationBuilder().token(token).build()
@@ -165,7 +181,12 @@ def main():
     )
 
     app.add_handler(conv_handler)
+
+    # Запуск теста отправки сообщения админу перед polling
+    asyncio.run(test_admin_message(app))
+
     app.run_polling()
+
 
 if __name__ == "__main__":
     main()

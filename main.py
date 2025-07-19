@@ -18,15 +18,18 @@ from telegram.ext import (
 import os
 
 # Состояния диалога
-ASKING_NAME, ASKING_EMAIL, ASKING_PHONE, ASKING_ADDRESS, ASKING_SIZE, CONFIRM = range(6)
+ASKING_NAME, ASKING_EMAIL, ASKING_PHONE, ASKING_ADDRESS, ASKING_SIZE, CONFIRM, ASKING_QUESTION = range(7)
 
-# Доступные размеры
+# Размеры
 sizes = ["M", "L", "XL", "XXL"]
 
-# Хранилище заказов
+# Заказы
 orders = {}
 
-# Стартовая команда
+# Админ ID
+ADMIN_ID = os.getenv("ADMIN_ID")
+
+# /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [KeyboardButton("Оформить заказ"), KeyboardButton("Задать вопрос")]
@@ -37,7 +40,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
 
-# Обработка выбора действия
+# Обработка выбора
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
@@ -45,13 +48,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Пожалуйста, укажите ваше полное имя (ФИО):")
         return ASKING_NAME
     elif text == "Задать вопрос":
-        await update.message.reply_text("Пожалуйста, напишите ваш вопрос. Мы ответим в ближайшее время.")
-        return ConversationHandler.END
+        await update.message.reply_text("Пожалуйста, напишите ваш вопрос. Мы передадим его администратору.")
+        return ASKING_QUESTION
     else:
         await update.message.reply_text("Пожалуйста, выберите один из доступных вариантов.")
         return ConversationHandler.END
 
-# Шаги оформления заказа
+# Шаги заказа
 async def ask_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     orders[update.message.from_user.id] = {"fio": update.message.text}
     await update.message.reply_text("Укажите, пожалуйста, вашу электронную почту:")
@@ -98,11 +101,9 @@ async def size_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton("Задать вопрос", callback_data="ask_question")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-
     await query.edit_message_text(text=summary, reply_markup=reply_markup)
 
-    # Уведомление администратора
-    ADMIN_ID = os.getenv("ADMIN_ID")
+    # Уведомление администратора о заказе
     if ADMIN_ID:
         await context.bot.send_message(
             chat_id=int(ADMIN_ID),
@@ -111,19 +112,35 @@ async def size_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     return CONFIRM
 
-# Обработка нажатия "Задать вопрос"
+# Вопрос через кнопку
 async def ask_question_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("Пожалуйста, напишите ваш вопрос. Мы ответим в ближайшее время.")
+    await query.edit_message_text("Пожалуйста, напишите ваш вопрос. Мы передадим его администратору.")
+    return ASKING_QUESTION
+
+# Ответ на вопрос
+async def handle_user_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    question = update.message.text
+    username = update.message.from_user.username or "неизвестный пользователь"
+    user_id = update.message.from_user.id
+
+    await update.message.reply_text("Спасибо! Ваш вопрос отправлен администратору.")
+
+    if ADMIN_ID:
+        await context.bot.send_message(
+            chat_id=int(ADMIN_ID),
+            text=f"❓ Вопрос от @{username} (ID: {user_id}):\n\n{question}"
+        )
+
     return ConversationHandler.END
 
-# Отмена диалога
+# Отмена
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Операция отменена.")
     return ConversationHandler.END
 
-# Главная точка входа
+# Запуск
 def main():
     token = os.getenv("BOT_TOKEN")
     app = ApplicationBuilder().token(token).build()
@@ -141,6 +158,7 @@ def main():
             ASKING_ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_size)],
             ASKING_SIZE: [CallbackQueryHandler(size_chosen)],
             CONFIRM: [CallbackQueryHandler(ask_question_callback, pattern="ask_question")],
+            ASKING_QUESTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_question)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
         allow_reentry=True,

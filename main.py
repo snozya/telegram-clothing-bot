@@ -1,65 +1,79 @@
-import os
 from telegram import (
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    ReplyKeyboardMarkup,
-    KeyboardButton,
+    Update, InlineKeyboardButton, InlineKeyboardMarkup,
+    ReplyKeyboardMarkup, KeyboardButton
 )
 from telegram.ext import (
-    ApplicationBuilder,
-    CommandHandler,
-    MessageHandler,
-    CallbackQueryHandler,
-    ContextTypes,
-    ConversationHandler,
-    filters,
+    ApplicationBuilder, CommandHandler, MessageHandler,
+    CallbackQueryHandler, ContextTypes, filters, ConversationHandler
 )
 
-ASKING_NAME, ASKING_EMAIL, ASKING_PHONE, ASKING_ADDRESS, ASKING_SIZE, CONFIRM, ASKING_QUESTION = range(7)
+import os
 
+# Этапы диалога
+ASKING_NAME, ASKING_EMAIL, ASKING_PHONE, ASKING_ADDRESS, ASKING_SIZE, CONFIRM = range(6)
+
+# Список размеров
 sizes = ["M", "L", "XL", "XXL"]
+
+# Хранилище заказов
 orders = {}
-ADMIN_ID = os.getenv("ADMIN_ID")
 
-payment_url = "https://yoomoney.ru/to/4100118127237525/1850"
+# Получаем переменные окружения
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = os.getenv("ADMIN_ID")  # Должен быть числом (например: 123456789)
 
+# Стартовое сообщение
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
-        [KeyboardButton("Оформить заказ"), KeyboardButton("Задать вопрос")]
+        [KeyboardButton("Оформить заказ")],
+        [KeyboardButton("Задать вопрос")],
+        [KeyboardButton("Наши соцсети / Информация")]
     ]
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-    await update.message.reply_text(
-        "Здравствуйте! Я бот-консультант.\nВыберите, пожалуйста, один из пунктов меню:",
-        reply_markup=reply_markup
-    )
+    await update.message.reply_text("Добро пожаловать! Чем можем помочь?", reply_markup=reply_markup)
 
+# Обработка нажатий кнопок
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
     if text == "Оформить заказ":
-        await update.message.reply_text("Пожалуйста, укажите ваше полное имя (ФИО):")
+        await update.message.reply_text("Пожалуйста, введите ФИО:")
         return ASKING_NAME
     elif text == "Задать вопрос":
-        await update.message.reply_text("Пожалуйста, напишите ваш вопрос. Мы передадим его администратору.")
-        return ASKING_QUESTION
+        await update.message.reply_text("Напишите ваш вопрос, мы ответим в ближайшее время.")
+        # Перешлём вопрос админу
+        if ADMIN_ID:
+            await context.bot.send_message(
+                chat_id=int(ADMIN_ID),
+                text=f"Вопрос от пользователя @{update.message.from_user.username or update.message.from_user.id}:\n\n{text}"
+            )
+        return ConversationHandler.END
+    elif text == "Наши соцсети / Информация":
+        await update.message.reply_text(
+            "Следите за нами в соцсетях:\n\n"
+            "📢 Telegram-канал — https://t.me/yourchannel\n"
+            "📸 Instagram — https://instagram.com/yourprofile\n"
+            "🎵 TikTok — https://tiktok.com/@yourprofile"
+        )
+        return ConversationHandler.END
     else:
-        await update.message.reply_text("Пожалуйста, выберите один из доступных вариантов.")
+        await update.message.reply_text("Пожалуйста, выберите одну из кнопок.")
         return ConversationHandler.END
 
+# Сбор информации
 async def ask_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     orders[update.message.from_user.id] = {"fio": update.message.text}
-    await update.message.reply_text("Укажите, пожалуйста, вашу электронную почту:")
+    await update.message.reply_text("Введите электронную почту:")
     return ASKING_EMAIL
 
 async def ask_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     orders[update.message.from_user.id]["email"] = update.message.text
-    await update.message.reply_text("Укажите ваш контактный номер телефона:")
+    await update.message.reply_text("Введите контактный номер телефона:")
     return ASKING_PHONE
 
 async def ask_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
     orders[update.message.from_user.id]["phone"] = update.message.text
-    await update.message.reply_text("Укажите город в котором вы проживаете и точный адрес удобного для вас ПВЗ CDEK:")
+    await update.message.reply_text("Введите адрес доставки:")
     return ASKING_ADDRESS
 
 async def ask_size(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -68,85 +82,69 @@ async def ask_size(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [InlineKeyboardButton(size, callback_data=size) for size in sizes]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Выберите, пожалуйста, нужный размер:", reply_markup=reply_markup)
+    await update.message.reply_text("Выберите размер:", reply_markup=reply_markup)
     return ASKING_SIZE
 
 async def size_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     size = query.data
-    orders[query.from_user.id]["size"] = size
+    user_id = query.from_user.id
 
-    order = orders[query.from_user.id]
-    summary = (
-        f"Ваш заказ оформлен:\n\n"
+    orders[user_id]["size"] = size
+
+    order = orders[user_id]
+
+    text = (
+        f"✅ Ваш заказ оформлен:\n\n"
         f"👤 ФИО: {order['fio']}\n"
         f"📧 Email: {order['email']}\n"
         f"📞 Телефон: {order['phone']}\n"
-        f"📦 Адрес доставки: {order['address']}\n"
-        f"📐 Размер: {size}\n\n"
-        f"💰 Итого к оплате: 1850 рублей (без учёта доставки)"
+        f"🏠 Адрес: {order['address']}\n"
+        f"📏 Размер: {order['size']}\n\n"
+        f"💰 Сумма к оплате: 1850 ₽ (без доставки)"
     )
 
-    # Редактируем предыдущее сообщение текстом без кнопок
-    await query.edit_message_text(text=summary)
-
-    # Отправляем новое сообщение с кнопками оплаты и вопроса
     keyboard = [
-        [InlineKeyboardButton("Перейти к оплате", url=payment_url)],
+        [InlineKeyboardButton("Оплатить", url="https://yoomoney.ru/to/4100118127237525/1850")],
         [InlineKeyboardButton("Задать вопрос", callback_data="ask_question")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await context.bot.send_message(chat_id=query.from_user.id, text="Вы можете оплатить заказ по ссылке ниже:", reply_markup=reply_markup)
 
+    await query.edit_message_text(text=text, reply_markup=reply_markup)
+
+    # Уведомим администратора
     if ADMIN_ID:
-        try:
-            await context.bot.send_message(
-                chat_id=int(ADMIN_ID),
-                text=f"📦 Новый заказ от @{query.from_user.username or 'неизвестного пользователя'}:\n\n{summary}"
+        await context.bot.send_message(
+            chat_id=int(ADMIN_ID),
+            text=(
+                f"🛍 Новый заказ от @{query.from_user.username or query.from_user.id}:\n\n"
+                f"{text}"
             )
-        except Exception as e:
-            print(f"Ошибка отправки админу: {e}")
+        )
 
     return CONFIRM
 
+# Обработка кнопки "Задать вопрос"
 async def ask_question_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("Пожалуйста, напишите ваш вопрос. Мы передадим его администратору.")
-    return ASKING_QUESTION
-
-async def handle_user_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    question = update.message.text
-    username = update.message.from_user.username or "неизвестный пользователь"
-    user_id = update.message.from_user.id
-
-    await update.message.reply_text("Спасибо! Ваш вопрос отправлен администратору.")
-
-    if ADMIN_ID:
-        try:
-            await context.bot.send_message(
-                chat_id=int(ADMIN_ID),
-                text=f"❓ Вопрос от @{username} (ID: {user_id}):\n\n{question}"
-            )
-        except Exception as e:
-            print(f"Ошибка отправки админу: {e}")
-
+    await query.edit_message_text("Напишите ваш вопрос, мы ответим в ближайшее время.")
     return ConversationHandler.END
 
+# Отмена
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Операция отменена.")
+    await update.message.reply_text("Действие отменено.")
     return ConversationHandler.END
 
+# Запуск
 def main():
-    token = os.getenv("BOT_TOKEN")
-    app = ApplicationBuilder().token(token).build()
+    app = ApplicationBuilder().token(BOT_TOKEN).build()
 
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler("start", start),
-            MessageHandler(filters.Regex("^Оформить заказ$"), handle_message),
-            MessageHandler(filters.Regex("^Задать вопрос$"), handle_message),
+            MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message)
         ],
         states={
             ASKING_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_email)],
@@ -154,11 +152,10 @@ def main():
             ASKING_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_address)],
             ASKING_ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_size)],
             ASKING_SIZE: [CallbackQueryHandler(size_chosen)],
-            CONFIRM: [CallbackQueryHandler(ask_question_callback, pattern="ask_question")],
-            ASKING_QUESTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, handle_user_question)],
+            CONFIRM: [CallbackQueryHandler(ask_question_callback, pattern="ask_question")]
         },
         fallbacks=[CommandHandler("cancel", cancel)],
-        allow_reentry=True,
+        allow_reentry=True
     )
 
     app.add_handler(conv_handler)

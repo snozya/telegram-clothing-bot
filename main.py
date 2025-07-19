@@ -59,7 +59,7 @@ async def ask_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def ask_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
     orders[update.message.from_user.id]["phone"] = update.message.text
-    await update.message.reply_text("Введите адрес доставки:")
+    await update.message.reply_text("Укажите город в котором вы проживаете и точный адрес удобного для вас ПВЗ CDEK:")
     return ASKING_ADDRESS
 
 async def ask_size(update: Update, context: ContextTypes.DEFAULT_TYPE):

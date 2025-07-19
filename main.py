@@ -1,28 +1,30 @@
 from telegram import (
-    Update, InlineKeyboardButton, InlineKeyboardMarkup,
-    ReplyKeyboardMarkup, KeyboardButton
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
 )
 from telegram.ext import (
-    ApplicationBuilder, CommandHandler, MessageHandler,
-    CallbackQueryHandler, ContextTypes, filters, ConversationHandler
+    ApplicationBuilder,
+    CommandHandler,
+    MessageHandler,
+    CallbackQueryHandler,
+    ContextTypes,
+    filters,
+    ConversationHandler,
 )
-
 import os
 
-# Этапы диалога
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+ADMIN_ID = os.getenv("ADMIN_ID")
+
 ASKING_NAME, ASKING_EMAIL, ASKING_PHONE, ASKING_ADDRESS, ASKING_SIZE, CONFIRM = range(6)
 
-# Список размеров
 sizes = ["M", "L", "XL", "XXL"]
-
-# Хранилище заказов
 orders = {}
 
-# Получаем переменные окружения
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = os.getenv("ADMIN_ID")  # Должен быть числом (например: 123456789)
-
-# Стартовое сообщение
+# /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [KeyboardButton("Оформить заказ")],
@@ -32,38 +34,35 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     await update.message.reply_text("Добро пожаловать! Чем можем помочь?", reply_markup=reply_markup)
 
-# Обработка нажатий кнопок
+# Обработка главного меню
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
 
     if text == "Оформить заказ":
-        await update.message.reply_text("Пожалуйста, введите ФИО:")
+        await update.message.reply_text("Пожалуйста, введите ваше ФИО:")
         return ASKING_NAME
+
     elif text == "Задать вопрос":
-        await update.message.reply_text("Напишите ваш вопрос, мы ответим в ближайшее время.")
-        # Перешлём вопрос админу
-        if ADMIN_ID:
-            await context.bot.send_message(
-                chat_id=int(ADMIN_ID),
-                text=f"Вопрос от пользователя @{update.message.from_user.username or update.message.from_user.id}:\n\n{text}"
-            )
+        await update.message.reply_text("Напишите ваш вопрос, и мы свяжемся с вами в ближайшее время.")
         return ConversationHandler.END
+
     elif text == "Наши соцсети / Информация":
         await update.message.reply_text(
             "Следите за нами в соцсетях:\n\n"
-            "📢 Telegram-канал — https://t.me/yourchannel\n"
-            "📸 Instagram — https://instagram.com/yourprofile\n"
-            "🎵 TikTok — https://tiktok.com/@yourprofile"
+            "📢 Telegram: https://t.me/yourchannel\n"
+            "📸 Instagram: https://instagram.com/yourprofile\n"
+            "🎵 TikTok: https://tiktok.com/@yourprofile"
         )
         return ConversationHandler.END
+
     else:
         await update.message.reply_text("Пожалуйста, выберите одну из кнопок.")
         return ConversationHandler.END
 
-# Сбор информации
+# Шаги оформления заказа
 async def ask_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     orders[update.message.from_user.id] = {"fio": update.message.text}
-    await update.message.reply_text("Введите электронную почту:")
+    await update.message.reply_text("Введите вашу электронную почту:")
     return ASKING_EMAIL
 
 async def ask_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -85,51 +84,61 @@ async def ask_size(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Выберите размер:", reply_markup=reply_markup)
     return ASKING_SIZE
 
+# Пользователь выбрал размер
 async def size_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    size = query.data
     user_id = query.from_user.id
-
+    size = query.data
     orders[user_id]["size"] = size
 
     order = orders[user_id]
-
-    text = (
-        f"✅ Ваш заказ оформлен:\n\n"
+    summary = (
+        f"🛍 Ваш заказ:\n\n"
         f"👤 ФИО: {order['fio']}\n"
         f"📧 Email: {order['email']}\n"
         f"📞 Телефон: {order['phone']}\n"
-        f"🏠 Адрес: {order['address']}\n"
-        f"📏 Размер: {order['size']}\n\n"
-        f"💰 Сумма к оплате: 1850 ₽ (без доставки)"
+        f"📦 Адрес: {order['address']}\n"
+        f"📐 Размер: {size}\n\n"
+        f"💰 Итого к оплате: 1850 ₽ (без доставки)"
     )
 
     keyboard = [
         [InlineKeyboardButton("Оплатить", url="https://yoomoney.ru/to/4100118127237525/1850")],
+        [InlineKeyboardButton("Я оплатил", callback_data="payment_done")],
         [InlineKeyboardButton("Задать вопрос", callback_data="ask_question")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    await query.edit_message_text(text=text, reply_markup=reply_markup)
+    await query.edit_message_text(text=summary, reply_markup=reply_markup)
 
-    # Уведомим администратора
+    # Уведомление администратору
     if ADMIN_ID:
         await context.bot.send_message(
             chat_id=int(ADMIN_ID),
-            text=(
-                f"🛍 Новый заказ от @{query.from_user.username or query.from_user.id}:\n\n"
-                f"{text}"
-            )
+            text=f"📥 Новый заказ от @{query.from_user.username or user_id}:\n\n{summary}"
         )
 
     return CONFIRM
 
-# Обработка кнопки "Задать вопрос"
+# Пользователь нажал "Я оплатил"
+async def payment_done_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text("✅ Спасибо! Мы скоро с вами свяжемся.")
+
+    if ADMIN_ID:
+        await context.bot.send_message(
+            chat_id=int(ADMIN_ID),
+            text=f"💳 Пользователь @{query.from_user.username or query.from_user.id} сообщил об оплате заказа."
+        )
+    return ConversationHandler.END
+
+# Задать вопрос после заказа
 async def ask_question_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
-    await query.edit_message_text("Напишите ваш вопрос, мы ответим в ближайшее время.")
+    await query.edit_message_text("Напишите ваш вопрос, и мы свяжемся с вами в ближайшее время.")
     return ConversationHandler.END
 
 # Отмена
@@ -152,7 +161,10 @@ def main():
             ASKING_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_address)],
             ASKING_ADDRESS: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_size)],
             ASKING_SIZE: [CallbackQueryHandler(size_chosen)],
-            CONFIRM: [CallbackQueryHandler(ask_question_callback, pattern="ask_question")]
+            CONFIRM: [
+                CallbackQueryHandler(ask_question_callback, pattern="ask_question"),
+                CallbackQueryHandler(payment_done_callback, pattern="payment_done")
+            ],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
         allow_reentry=True

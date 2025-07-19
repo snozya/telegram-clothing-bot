@@ -22,7 +22,6 @@ sizes = ["M", "L", "XL", "XXL"]
 orders = {}
 ADMIN_ID = os.getenv("ADMIN_ID")
 
-# Ваша ссылка на оплату ЮMoney без ИП
 payment_url = "https://yoomoney.ru/to/4100118127237525/1850"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -89,12 +88,16 @@ async def size_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"💰 Итого к оплате: 1850 рублей (без учёта доставки)"
     )
 
+    # Редактируем предыдущее сообщение текстом без кнопок
+    await query.edit_message_text(text=summary)
+
+    # Отправляем новое сообщение с кнопками оплаты и вопроса
     keyboard = [
         [InlineKeyboardButton("Перейти к оплате", url=payment_url)],
         [InlineKeyboardButton("Задать вопрос", callback_data="ask_question")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(text=summary, reply_markup=reply_markup)
+    await context.bot.send_message(chat_id=query.from_user.id, text="Вы можете оплатить заказ по ссылке ниже:", reply_markup=reply_markup)
 
     if ADMIN_ID:
         try:

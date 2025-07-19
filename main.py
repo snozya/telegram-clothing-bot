@@ -1,13 +1,13 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters, ConversationHandler
 
-BOT_TOKEN = ""  # Не забудь установить в переменных окружения
+BOT_TOKEN = ""  # Установи в переменных окружения
 
-ASKING_NAME, ASKING_EMAIL, ASKING_PHONE, ASKING_ADDRESS, ASKING_SIZE, CONFIRM = range(6)
+ASKING_NAME, ASKING_EMAIL, ASKING_PHONE, ASKING_ADDRESS, ASKING_SIZE, CONFIRM, ASKING_QUESTION = range(7)
 sizes = ["M", "L", "XL", "XXL"]
 orders = {}
 
-ADMIN_ID = 123456789  # Заменить на твой Telegram ID администратора
+ADMIN_ID = 123456789  # Твой Telegram ID
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [[KeyboardButton("Оформить заказ"), KeyboardButton("Задать вопрос")]]
@@ -16,54 +16,54 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     return ConversationHandler.END
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text
+    text = update.message.text.strip()
     if text == "Оформить заказ":
         await update.message.reply_text("Пожалуйста, введите ФИО:")
         return ASKING_NAME
     elif text == "Задать вопрос":
-        await update.message.reply_text("Напишите ваш вопрос, мы ответим в ближайшее время.")
-        return ASKING_NAME  # Чтобы поймать вопрос в следующем сообщении
+        await update.message.reply_text("Пожалуйста, напишите ваш вопрос:")
+        return ASKING_QUESTION
     else:
         await update.message.reply_text("Пожалуйста, используйте кнопки для выбора.")
         return ConversationHandler.END
 
 async def ask_email(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    text = update.message.text.strip()
-    if not text:
+    fio = update.message.text.strip()
+    if not fio:
         await update.message.reply_text("ФИО не может быть пустым. Пожалуйста, введите ФИО:")
         return ASKING_NAME
-    orders[user_id] = {"fio": text}
+    orders[user_id] = {"fio": fio}
     await update.message.reply_text("Введите вашу электронную почту:")
     return ASKING_EMAIL
 
 async def ask_phone(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    text = update.message.text.strip()
-    if "@" not in text or "." not in text:
+    email = update.message.text.strip()
+    if "@" not in email or "." not in email:
         await update.message.reply_text("Пожалуйста, введите корректный email:")
         return ASKING_EMAIL
-    orders[user_id]["email"] = text
+    orders[user_id]["email"] = email
     await update.message.reply_text("Введите контактный номер телефона:")
     return ASKING_PHONE
 
 async def ask_address(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    text = update.message.text.strip()
-    if len(text) < 5:
-        await update.message.reply_text("Пожалуйста, введите корректный адрес доставки:")
+    phone = update.message.text.strip()
+    if len(phone) < 5:
+        await update.message.reply_text("Пожалуйста, введите корректный номер телефона:")
         return ASKING_PHONE
-    orders[user_id]["phone"] = text
+    orders[user_id]["phone"] = phone
     await update.message.reply_text("Введите адрес доставки:")
     return ASKING_ADDRESS
 
 async def ask_size(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
-    text = update.message.text.strip()
-    if len(text) < 5:
+    address = update.message.text.strip()
+    if len(address) < 5:
         await update.message.reply_text("Пожалуйста, введите корректный адрес доставки:")
         return ASKING_ADDRESS
-    orders[user_id]["address"] = text
+    orders[user_id]["address"] = address
     keyboard = [[InlineKeyboardButton(size, callback_data=size) for size in sizes]]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("Выберите размер:", reply_markup=reply_markup)
@@ -85,7 +85,6 @@ async def size_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Размер: {size}\n\n"
         f"Итого к оплате: 1850 рублей (без доставки)."
     )
-
     keyboard = [
         [InlineKeyboardButton("Перейти к оплате", url="https://yoomoney.ru/to/4100118127237525/1850")],
         [InlineKeyboardButton("Наши соцсети", callback_data="socials")],
@@ -93,7 +92,6 @@ async def size_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
 
-    # Отправляем администратору уведомление
     try:
         await context.bot.send_message(chat_id=ADMIN_ID, text=f"Новый заказ:\n{text}")
     except Exception as e:
@@ -102,11 +100,20 @@ async def size_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await query.edit_message_text(text=text, reply_markup=reply_markup)
     return CONFIRM
 
-async def ask_question_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    await query.edit_message_text("Пожалуйста, напишите ваш вопрос в ответном сообщении.")
-    return ASKING_NAME  # Чтобы поймать вопрос
+async def ask_question(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    question = update.message.text.strip()
+    if not question:
+        await update.message.reply_text("Пожалуйста, напишите ваш вопрос:")
+        return ASKING_QUESTION
+
+    try:
+        await context.bot.send_message(chat_id=ADMIN_ID, text=f"Вопрос от пользователя {user_id}:\n{question}")
+    except Exception as e:
+        print(f"Ошибка отправки админу: {e}")
+
+    await update.message.reply_text("Спасибо! Ваш вопрос отправлен, мы скоро ответим.")
+    return ConversationHandler.END
 
 async def socials_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -119,6 +126,12 @@ async def socials_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     await query.edit_message_text(text=text)
     return CONFIRM
+
+async def ask_question_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text("Пожалуйста, напишите ваш вопрос:")
+    return ASKING_QUESTION
 
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text("Операция отменена.")
@@ -141,6 +154,7 @@ def main():
                 CallbackQueryHandler(ask_question_callback, pattern="ask_question"),
                 CallbackQueryHandler(socials_callback, pattern="socials")
             ],
+            ASKING_QUESTION: [MessageHandler(filters.TEXT & ~filters.COMMAND, ask_question)],
         },
         fallbacks=[CommandHandler("cancel", cancel)],
         allow_reentry=True

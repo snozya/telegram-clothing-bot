@@ -22,6 +22,9 @@ sizes = ["M", "L", "XL", "XXL"]
 orders = {}
 ADMIN_ID = os.getenv("ADMIN_ID")
 
+# Ваша ссылка на оплату ЮMoney без ИП
+payment_url = "https://yoomoney.ru/to/4100118127237525/1850"
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
         [KeyboardButton("Оформить заказ"), KeyboardButton("Задать вопрос")]
@@ -87,7 +90,7 @@ async def size_chosen(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
     keyboard = [
-        [InlineKeyboardButton("Перейти к оплате", url="https://example.com/pay")],
+        [InlineKeyboardButton("Перейти к оплате", url=payment_url)],
         [InlineKeyboardButton("Задать вопрос", callback_data="ask_question")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
